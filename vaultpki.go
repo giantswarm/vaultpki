@@ -53,11 +53,9 @@ func New(config Config) (*VaultPKI, error) {
 	}
 
 	p := &VaultPKI{
-		// Dependencies.
 		logger:      config.Logger,
 		vaultClient: config.VaultClient,
 
-		// Settings.
 		caTTL:            config.CATTL,
 		commonNameFormat: config.CommonNameFormat,
 	}
