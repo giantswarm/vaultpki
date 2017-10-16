@@ -14,7 +14,7 @@ func (p *VaultPKI) BackendExists(ID string) (bool, error) {
 	} else if err != nil {
 		return false, microerror.Mask(err)
 	}
-	mountOutput, ok := mounts[key.ListMountsPath(ID)+"/"]
+	mountOutput, ok := mounts[key.ListMountsPath(ID)]
 	if !ok || mountOutput.Type != "pki" {
 		return false, nil
 	}
