@@ -26,10 +26,6 @@ import (
 )
 
 func TestHTTP_Fallback_Bad_Address(t *testing.T) {
-	handler1 := http.NewServeMux()
-	handler2 := http.NewServeMux()
-	handler3 := http.NewServeMux()
-
 	coreConfig := &vault.CoreConfig{
 		LogicalBackends: map[string]logical.Factory{
 			"transit": transit.Factory,
@@ -37,21 +33,16 @@ func TestHTTP_Fallback_Bad_Address(t *testing.T) {
 		ClusterAddr: "https://127.3.4.1:8382",
 	}
 
-	// Chicken-and-egg: Handler needs a core. So we create handlers first, then
-	// add routes chained to a Handler-created handler.
-	cores := vault.TestCluster(t, []http.Handler{handler1, handler2, handler3}, coreConfig, true)
-	for _, core := range cores {
-		defer core.CloseListeners()
-	}
-	handler1.Handle("/", Handler(cores[0].Core))
-	handler2.Handle("/", Handler(cores[1].Core))
-	handler3.Handle("/", Handler(cores[2].Core))
+	cluster := vault.NewTestCluster(t, coreConfig, &vault.TestClusterOptions{
+		HandlerFunc: Handler,
+	})
+	cluster.Start()
+	defer cluster.Cleanup()
+	cores := cluster.Cores
 
 	// make it easy to get access to the active
 	core := cores[0].Core
 	vault.TestWaitActive(t, core)
-
-	root := cores[0].Root
 
 	addrs := []string{
 		fmt.Sprintf("https://127.0.0.1:%d", cores[1].Listeners[0].Address.Port),
@@ -61,13 +52,13 @@ func TestHTTP_Fallback_Bad_Address(t *testing.T) {
 	for _, addr := range addrs {
 		config := api.DefaultConfig()
 		config.Address = addr
-		config.HttpClient = cleanhttp.DefaultClient()
 		config.HttpClient.Transport.(*http.Transport).TLSClientConfig = cores[0].TLSConfig
+
 		client, err := api.NewClient(config)
 		if err != nil {
 			t.Fatal(err)
 		}
-		client.SetToken(root)
+		client.SetToken(cluster.RootToken)
 
 		secret, err := client.Auth().Token().LookupSelf()
 		if err != nil {
@@ -76,17 +67,13 @@ func TestHTTP_Fallback_Bad_Address(t *testing.T) {
 		if secret == nil {
 			t.Fatal("secret is nil")
 		}
-		if secret.Data["id"].(string) != root {
+		if secret.Data["id"].(string) != cluster.RootToken {
 			t.Fatal("token mismatch")
 		}
 	}
 }
 
 func TestHTTP_Fallback_Disabled(t *testing.T) {
-	handler1 := http.NewServeMux()
-	handler2 := http.NewServeMux()
-	handler3 := http.NewServeMux()
-
 	coreConfig := &vault.CoreConfig{
 		LogicalBackends: map[string]logical.Factory{
 			"transit": transit.Factory,
@@ -94,21 +81,16 @@ func TestHTTP_Fallback_Disabled(t *testing.T) {
 		ClusterAddr: "empty",
 	}
 
-	// Chicken-and-egg: Handler needs a core. So we create handlers first, then
-	// add routes chained to a Handler-created handler.
-	cores := vault.TestCluster(t, []http.Handler{handler1, handler2, handler3}, coreConfig, true)
-	for _, core := range cores {
-		defer core.CloseListeners()
-	}
-	handler1.Handle("/", Handler(cores[0].Core))
-	handler2.Handle("/", Handler(cores[1].Core))
-	handler3.Handle("/", Handler(cores[2].Core))
+	cluster := vault.NewTestCluster(t, coreConfig, &vault.TestClusterOptions{
+		HandlerFunc: Handler,
+	})
+	cluster.Start()
+	defer cluster.Cleanup()
+	cores := cluster.Cores
 
 	// make it easy to get access to the active
 	core := cores[0].Core
 	vault.TestWaitActive(t, core)
-
-	root := cores[0].Root
 
 	addrs := []string{
 		fmt.Sprintf("https://127.0.0.1:%d", cores[1].Listeners[0].Address.Port),
@@ -118,13 +100,13 @@ func TestHTTP_Fallback_Disabled(t *testing.T) {
 	for _, addr := range addrs {
 		config := api.DefaultConfig()
 		config.Address = addr
-		config.HttpClient = cleanhttp.DefaultClient()
 		config.HttpClient.Transport.(*http.Transport).TLSClientConfig = cores[0].TLSConfig
+
 		client, err := api.NewClient(config)
 		if err != nil {
 			t.Fatal(err)
 		}
-		client.SetToken(root)
+		client.SetToken(cluster.RootToken)
 
 		secret, err := client.Auth().Token().LookupSelf()
 		if err != nil {
@@ -133,7 +115,7 @@ func TestHTTP_Fallback_Disabled(t *testing.T) {
 		if secret == nil {
 			t.Fatal("secret is nil")
 		}
-		if secret.Data["id"].(string) != root {
+		if secret.Data["id"].(string) != cluster.RootToken {
 			t.Fatal("token mismatch")
 		}
 	}
@@ -146,13 +128,9 @@ func TestHTTP_Forwarding_Stress(t *testing.T) {
 	testHTTP_Forwarding_Stress_Common(t, true, 50)
 }
 
-func testHTTP_Forwarding_Stress_Common(t *testing.T, parallel bool, num uint64) {
+func testHTTP_Forwarding_Stress_Common(t *testing.T, parallel bool, num uint32) {
 	testPlaintext := "the quick brown fox"
 	testPlaintextB64 := "dGhlIHF1aWNrIGJyb3duIGZveA=="
-
-	handler1 := http.NewServeMux()
-	handler2 := http.NewServeMux()
-	handler3 := http.NewServeMux()
 
 	coreConfig := &vault.CoreConfig{
 		LogicalBackends: map[string]logical.Factory{
@@ -160,21 +138,16 @@ func testHTTP_Forwarding_Stress_Common(t *testing.T, parallel bool, num uint64) 
 		},
 	}
 
-	// Chicken-and-egg: Handler needs a core. So we create handlers first, then
-	// add routes chained to a Handler-created handler.
-	cores := vault.TestCluster(t, []http.Handler{handler1, handler2, handler3}, coreConfig, true)
-	for _, core := range cores {
-		defer core.CloseListeners()
-	}
-	handler1.Handle("/", Handler(cores[0].Core))
-	handler2.Handle("/", Handler(cores[1].Core))
-	handler3.Handle("/", Handler(cores[2].Core))
+	cluster := vault.NewTestCluster(t, coreConfig, &vault.TestClusterOptions{
+		HandlerFunc: Handler,
+	})
+	cluster.Start()
+	defer cluster.Cleanup()
+	cores := cluster.Cores
 
 	// make it easy to get access to the active
 	core := cores[0].Core
 	vault.TestWaitActive(t, core)
-
-	root := cores[0].Root
 
 	wg := sync.WaitGroup{}
 
@@ -206,36 +179,40 @@ func testHTTP_Forwarding_Stress_Common(t *testing.T, parallel bool, num uint64) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	req.Header.Set(AuthHeaderName, root)
+	req.Header.Set(AuthHeaderName, cluster.RootToken)
 	_, err = client.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
 	//core.Logger().Printf("[TRACE] done mounting transit")
 
-	var totalOps uint64
-	var successfulOps uint64
-	var key1ver int64 = 1
-	var key2ver int64 = 1
-	var key3ver int64 = 1
-	var numWorkers uint64 = 50
-	var numWorkersStarted uint64
+	var totalOps *uint32 = new(uint32)
+	var successfulOps *uint32 = new(uint32)
+	var key1ver *int32 = new(int32)
+	*key1ver = 1
+	var key2ver *int32 = new(int32)
+	*key2ver = 1
+	var key3ver *int32 = new(int32)
+	*key3ver = 1
+	var numWorkers *uint32 = new(uint32)
+	*numWorkers = 50
+	var numWorkersStarted *uint32 = new(uint32)
 	var waitLock sync.Mutex
 	waitCond := sync.NewCond(&waitLock)
 
 	// This is the goroutine loop
 	doFuzzy := func(id int, parallel bool) {
-		var myTotalOps uint64
-		var mySuccessfulOps uint64
-		var keyVer int64 = 1
+		var myTotalOps uint32
+		var mySuccessfulOps uint32
+		var keyVer int32 = 1
 		// Check for panics, otherwise notify we're done
 		defer func() {
 			if err := recover(); err != nil {
 				core.Logger().Error("got a panic: %v", err)
 				t.Fail()
 			}
-			atomic.AddUint64(&totalOps, myTotalOps)
-			atomic.AddUint64(&successfulOps, mySuccessfulOps)
+			atomic.AddUint32(totalOps, myTotalOps)
+			atomic.AddUint32(successfulOps, mySuccessfulOps)
 			wg.Done()
 		}()
 
@@ -255,7 +232,7 @@ func testHTTP_Forwarding_Stress_Common(t *testing.T, parallel bool, num uint64) 
 			if err != nil {
 				return nil, err
 			}
-			req.Header.Set(AuthHeaderName, root)
+			req.Header.Set(AuthHeaderName, cluster.RootToken)
 			resp, err := client.Do(req)
 			if err != nil {
 				return nil, err
@@ -308,16 +285,16 @@ func testHTTP_Forwarding_Stress_Common(t *testing.T, parallel bool, num uint64) 
 			}
 		}
 
-		atomic.AddUint64(&numWorkersStarted, 1)
+		atomic.AddUint32(numWorkersStarted, 1)
 
 		waitCond.L.Lock()
-		for atomic.LoadUint64(&numWorkersStarted) != numWorkers {
+		for atomic.LoadUint32(numWorkersStarted) != atomic.LoadUint32(numWorkers) {
 			waitCond.Wait()
 		}
 		waitCond.L.Unlock()
 		waitCond.Broadcast()
 
-		core.Logger().Trace("Starting goroutine", "id", id)
+		core.Logger().Debug("Starting goroutine", "id", id)
 
 		startTime := time.Now()
 		for {
@@ -402,11 +379,11 @@ func testHTTP_Forwarding_Stress_Common(t *testing.T, parallel bool, num uint64) 
 				if parallel {
 					switch chosenKey {
 					case "test1":
-						atomic.AddInt64(&key1ver, 1)
+						atomic.AddInt32(key1ver, 1)
 					case "test2":
-						atomic.AddInt64(&key2ver, 1)
+						atomic.AddInt32(key2ver, 1)
 					case "test3":
-						atomic.AddInt64(&key3ver, 1)
+						atomic.AddInt32(key3ver, 1)
 					}
 				} else {
 					keyVer++
@@ -416,19 +393,19 @@ func testHTTP_Forwarding_Stress_Common(t *testing.T, parallel bool, num uint64) 
 
 			// Change the min version, which also tests the archive functionality
 			case "change_min_version":
-				var latestVersion int64 = keyVer
+				var latestVersion int32 = keyVer
 				if parallel {
 					switch chosenKey {
 					case "test1":
-						latestVersion = atomic.LoadInt64(&key1ver)
+						latestVersion = atomic.LoadInt32(key1ver)
 					case "test2":
-						latestVersion = atomic.LoadInt64(&key2ver)
+						latestVersion = atomic.LoadInt32(key2ver)
 					case "test3":
-						latestVersion = atomic.LoadInt64(&key3ver)
+						latestVersion = atomic.LoadInt32(key3ver)
 					}
 				}
 
-				setVersion := (myRand.Int63() % latestVersion) + 1
+				setVersion := (myRand.Int31() % latestVersion) + 1
 
 				//core.Logger().Printf("[TRACE] %s, %s, %d, new min version %d", chosenFunc, chosenKey, id, setVersion)
 
@@ -442,10 +419,10 @@ func testHTTP_Forwarding_Stress_Common(t *testing.T, parallel bool, num uint64) 
 		}
 	}
 
-	atomic.StoreUint64(&numWorkers, num)
+	atomic.StoreUint32(numWorkers, num)
 
 	// Spawn some of these workers for 10 seconds
-	for i := 0; i < int(atomic.LoadUint64(&numWorkers)); i++ {
+	for i := 0; i < int(atomic.LoadUint32(numWorkers)); i++ {
 		wg.Add(1)
 		//core.Logger().Printf("[TRACE] spawning %d", i)
 		go doFuzzy(i+1, parallel)
@@ -454,40 +431,31 @@ func testHTTP_Forwarding_Stress_Common(t *testing.T, parallel bool, num uint64) 
 	// Wait for them all to finish
 	wg.Wait()
 
-	if totalOps == 0 || totalOps != successfulOps {
-		t.Fatalf("total/successful ops zero or mismatch: %d/%d; parallel: %t, num %d", totalOps, successfulOps, parallel, num)
+	if *totalOps == 0 || *totalOps != *successfulOps {
+		t.Fatalf("total/successful ops zero or mismatch: %d/%d; parallel: %t, num %d", *totalOps, *successfulOps, parallel, num)
 	}
-	t.Logf("total operations tried: %d, total successful: %d; parallel: %t, num %d", totalOps, successfulOps, parallel, num)
+	t.Logf("total operations tried: %d, total successful: %d; parallel: %t, num %d", *totalOps, *successfulOps, parallel, num)
 }
 
 // This tests TLS connection state forwarding by ensuring that we can use a
 // client TLS to authenticate against the cert backend
 func TestHTTP_Forwarding_ClientTLS(t *testing.T) {
-	handler1 := http.NewServeMux()
-	handler2 := http.NewServeMux()
-	handler3 := http.NewServeMux()
-
 	coreConfig := &vault.CoreConfig{
 		CredentialBackends: map[string]logical.Factory{
 			"cert": credCert.Factory,
 		},
 	}
 
-	// Chicken-and-egg: Handler needs a core. So we create handlers first, then
-	// add routes chained to a Handler-created handler.
-	cores := vault.TestCluster(t, []http.Handler{handler1, handler2, handler3}, coreConfig, true)
-	for _, core := range cores {
-		defer core.CloseListeners()
-	}
-	handler1.Handle("/", Handler(cores[0].Core))
-	handler2.Handle("/", Handler(cores[1].Core))
-	handler3.Handle("/", Handler(cores[2].Core))
+	cluster := vault.NewTestCluster(t, coreConfig, &vault.TestClusterOptions{
+		HandlerFunc: Handler,
+	})
+	cluster.Start()
+	defer cluster.Cleanup()
+	cores := cluster.Cores
 
 	// make it easy to get access to the active
 	core := cores[0].Core
 	vault.TestWaitActive(t, core)
-
-	root := cores[0].Root
 
 	transport := cleanhttp.DefaultTransport()
 	transport.TLSClientConfig = cores[0].TLSConfig
@@ -504,7 +472,7 @@ func TestHTTP_Forwarding_ClientTLS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	req.Header.Set(AuthHeaderName, root)
+	req.Header.Set(AuthHeaderName, cluster.RootToken)
 	_, err = client.Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -515,7 +483,7 @@ func TestHTTP_Forwarding_ClientTLS(t *testing.T) {
 		Policies    string `json:"policies"`
 	}
 	encodedCertConfig, err := json.Marshal(&certConfig{
-		Certificate: vault.TestClusterCACert,
+		Certificate: string(cluster.CACertPEM),
 		Policies:    "default",
 	})
 	if err != nil {
@@ -526,7 +494,7 @@ func TestHTTP_Forwarding_ClientTLS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	req.Header.Set(AuthHeaderName, root)
+	req.Header.Set(AuthHeaderName, cluster.RootToken)
 	_, err = client.Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -537,24 +505,28 @@ func TestHTTP_Forwarding_ClientTLS(t *testing.T) {
 		fmt.Sprintf("https://127.0.0.1:%d", cores[2].Listeners[0].Address.Port),
 	}
 
-	// Ensure we can't possibly use lingering connections even though it should be to a different address
-
-	transport = cleanhttp.DefaultTransport()
-	transport.TLSClientConfig = cores[0].TLSConfig
-
-	client = &http.Client{
-		Transport: transport,
-		CheckRedirect: func(*http.Request, []*http.Request) error {
-			return fmt.Errorf("redirects not allowed in this test")
-		},
-	}
-
-	//cores[0].Logger().Printf("root token is %s", root)
-	//time.Sleep(4 * time.Hour)
-
-	for _, addr := range addrs {
-		client := cores[0].Client
-		client.SetAddress(addr)
+	for i, addr := range addrs {
+		// Ensure we can't possibly use lingering connections even though it should
+		// be to a different address
+		transport = cleanhttp.DefaultTransport()
+		// i starts at zero but cores in addrs start at 1
+		transport.TLSClientConfig = cores[i+1].TLSConfig
+		if err := http2.ConfigureTransport(transport); err != nil {
+			t.Fatal(err)
+		}
+		httpClient := &http.Client{
+			Transport: transport,
+			CheckRedirect: func(*http.Request, []*http.Request) error {
+				return fmt.Errorf("redirects not allowed in this test")
+			},
+		}
+		client, err := api.NewClient(&api.Config{
+			Address:    addr,
+			HttpClient: httpClient,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
 
 		secret, err := client.Logical().Write("auth/cert/login", nil)
 		if err != nil {
@@ -587,18 +559,12 @@ func TestHTTP_Forwarding_ClientTLS(t *testing.T) {
 }
 
 func TestHTTP_Forwarding_HelpOperation(t *testing.T) {
-	handler1 := http.NewServeMux()
-	handler2 := http.NewServeMux()
-	handler3 := http.NewServeMux()
-
-	cores := vault.TestCluster(t, []http.Handler{handler1, handler2, handler3}, &vault.CoreConfig{}, true)
-	for _, core := range cores {
-		defer core.CloseListeners()
-	}
-
-	handler1.Handle("/", Handler(cores[0].Core))
-	handler2.Handle("/", Handler(cores[1].Core))
-	handler3.Handle("/", Handler(cores[2].Core))
+	cluster := vault.NewTestCluster(t, &vault.CoreConfig{}, &vault.TestClusterOptions{
+		HandlerFunc: Handler,
+	})
+	cluster.Start()
+	defer cluster.Cleanup()
+	cores := cluster.Cores
 
 	vault.TestWaitActive(t, cores[0].Core)
 

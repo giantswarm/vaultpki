@@ -2,8 +2,12 @@ package framework
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"regexp"
+	"strings"
 
+	"github.com/hashicorp/errwrap"
 	"github.com/hashicorp/vault/helper/parseutil"
 	"github.com/hashicorp/vault/helper/strutil"
 	"github.com/mitchellh/mapstructure"
@@ -18,7 +22,7 @@ type FieldData struct {
 	Schema map[string]*FieldSchema
 }
 
-// Cycle through raw data and validate conversions in
+// Validate cycles through raw data and validate conversions in
 // the schema, so we don't get an error/panic later when
 // trying to get data out.  Data not in the schema is not
 // an error at this point, so we don't worry about it.
@@ -31,15 +35,15 @@ func (d *FieldData) Validate() error {
 		}
 
 		switch schema.Type {
-		case TypeBool, TypeInt, TypeMap, TypeDurationSecond, TypeString, TypeSlice,
-			TypeStringSlice, TypeCommaStringSlice:
+		case TypeBool, TypeInt, TypeMap, TypeDurationSecond, TypeString, TypeLowerCaseString,
+			TypeNameString, TypeSlice, TypeStringSlice, TypeCommaStringSlice,
+			TypeKVPairs, TypeCommaIntSlice:
 			_, _, err := d.getPrimitive(field, schema)
 			if err != nil {
-				return fmt.Errorf("Error converting input %v for field %s: %s", value, field, err)
+				return errwrap.Wrapf(fmt.Sprintf("error converting input %v for field %q: {{err}}", value, field), err)
 			}
 		default:
-			return fmt.Errorf("unknown field type %s for field %s",
-				schema.Type, field)
+			return fmt.Errorf("unknown field type %q for field %q", schema.Type, field)
 		}
 	}
 
@@ -76,6 +80,19 @@ func (d *FieldData) GetDefaultOrZero(k string) interface{} {
 	return schema.DefaultOrZero()
 }
 
+// GetFirst gets the value for the given field names, in order from first
+// to last. This can be useful for fields with a current name, and one or
+// more deprecated names. The second return value will be false if the keys
+// are invalid or the keys are not set at all.
+func (d *FieldData) GetFirst(k ...string) (interface{}, bool) {
+	for _, v := range k {
+		if result, ok := d.GetOk(v); ok {
+			return result, ok
+		}
+	}
+	return nil, false
+}
+
 // GetOk gets the value for the given field. The second return value
 // will be false if the key is invalid or the key is not set at all.
 func (d *FieldData) GetOk(k string) (interface{}, bool) {
@@ -103,21 +120,21 @@ func (d *FieldData) GetOk(k string) (interface{}, bool) {
 func (d *FieldData) GetOkErr(k string) (interface{}, bool, error) {
 	schema, ok := d.Schema[k]
 	if !ok {
-		return nil, false, fmt.Errorf("unknown field: %s", k)
+		return nil, false, fmt.Errorf("unknown field: %q", k)
 	}
 
 	switch schema.Type {
-	case TypeBool, TypeInt, TypeMap, TypeDurationSecond, TypeString,
-		TypeSlice, TypeStringSlice, TypeCommaStringSlice:
+	case TypeBool, TypeInt, TypeMap, TypeDurationSecond, TypeString, TypeLowerCaseString,
+		TypeNameString, TypeSlice, TypeStringSlice, TypeCommaStringSlice,
+		TypeKVPairs, TypeCommaIntSlice:
 		return d.getPrimitive(k, schema)
 	default:
 		return nil, false,
-			fmt.Errorf("unknown field type %s for field %s", schema.Type, k)
+			fmt.Errorf("unknown field type %q for field %q", schema.Type, k)
 	}
 }
 
-func (d *FieldData) getPrimitive(
-	k string, schema *FieldSchema) (interface{}, bool, error) {
+func (d *FieldData) getPrimitive(k string, schema *FieldSchema) (interface{}, bool, error) {
 	raw, ok := d.Raw[k]
 	if !ok {
 		return nil, false, nil
@@ -145,6 +162,27 @@ func (d *FieldData) getPrimitive(
 		}
 		return result, true, nil
 
+	case TypeLowerCaseString:
+		var result string
+		if err := mapstructure.WeakDecode(raw, &result); err != nil {
+			return nil, true, err
+		}
+		return strings.ToLower(result), true, nil
+
+	case TypeNameString:
+		var result string
+		if err := mapstructure.WeakDecode(raw, &result); err != nil {
+			return nil, true, err
+		}
+		matched, err := regexp.MatchString("^\\w(([\\w-.]+)?\\w)?$", result)
+		if err != nil {
+			return nil, true, err
+		}
+		if !matched {
+			return nil, true, errors.New("field does not match the formatting rules")
+		}
+		return result, true, nil
+
 	case TypeMap:
 		var result map[string]interface{}
 		if err := mapstructure.WeakDecode(raw, &result); err != nil {
@@ -159,6 +197,16 @@ func (d *FieldData) getPrimitive(
 			return nil, false, nil
 		case int:
 			result = inp
+		case int32:
+			result = int(inp)
+		case int64:
+			result = int(inp)
+		case uint:
+			result = int(inp)
+		case uint32:
+			result = int(inp)
+		case uint64:
+			result = int(inp)
 		case float32:
 			result = int(inp)
 		case float64:
@@ -180,6 +228,22 @@ func (d *FieldData) getPrimitive(
 		}
 		return result, true, nil
 
+	case TypeCommaIntSlice:
+		var result []int
+		config := &mapstructure.DecoderConfig{
+			Result:           &result,
+			WeaklyTypedInput: true,
+			DecodeHook:       mapstructure.StringToSliceHookFunc(","),
+		}
+		decoder, err := mapstructure.NewDecoder(config)
+		if err != nil {
+			return nil, true, err
+		}
+		if err := decoder.Decode(raw); err != nil {
+			return nil, true, err
+		}
+		return result, true, nil
+
 	case TypeSlice:
 		var result []interface{}
 		if err := mapstructure.WeakDecode(raw, &result); err != nil {
@@ -195,20 +259,34 @@ func (d *FieldData) getPrimitive(
 		return strutil.TrimStrings(result), true, nil
 
 	case TypeCommaStringSlice:
-		var result []string
-		config := &mapstructure.DecoderConfig{
-			Result:           &result,
-			WeaklyTypedInput: true,
-			DecodeHook:       mapstructure.StringToSliceHookFunc(","),
-		}
-		decoder, err := mapstructure.NewDecoder(config)
+		res, err := parseutil.ParseCommaStringSlice(raw)
 		if err != nil {
 			return nil, false, err
 		}
-		if err := decoder.Decode(raw); err != nil {
-			return nil, false, err
+		return res, true, nil
+
+	case TypeKVPairs:
+		// First try to parse this as a map
+		var mapResult map[string]string
+		if err := mapstructure.WeakDecode(raw, &mapResult); err == nil {
+			return mapResult, true, nil
 		}
-		return strutil.TrimStrings(result), true, nil
+
+		// If map parse fails, parse as a string list of = delimited pairs
+		var listResult []string
+		if err := mapstructure.WeakDecode(raw, &listResult); err != nil {
+			return nil, true, err
+		}
+
+		result := make(map[string]string, len(listResult))
+		for _, keyPair := range listResult {
+			keyPairSlice := strings.SplitN(keyPair, "=", 2)
+			if len(keyPairSlice) != 2 || keyPairSlice[0] == "" {
+				return nil, false, fmt.Errorf("invalid key pair %q", keyPair)
+			}
+			result[keyPairSlice[0]] = keyPairSlice[1]
+		}
+		return result, true, nil
 
 	default:
 		panic(fmt.Sprintf("Unknown type: %s", schema.Type))
