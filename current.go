@@ -81,7 +81,7 @@ func (p *VaultPKI) ListBackends() (map[string]*vaultapi.MountOutput, error) {
 		return nil, microerror.Mask(err)
 	}
 
-	var backends map[string]*vaultapi.MountOutput
+	backends := map[string]*vaultapi.MountOutput{}
 	for k, v := range mounts {
 		if !key.IsMountPath(k) {
 			continue
