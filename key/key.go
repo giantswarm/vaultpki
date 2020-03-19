@@ -54,6 +54,11 @@ func ReadCAPath(ID string) string {
 	return fmt.Sprintf("pki-%s/cert/ca", ID)
 }
 
-func WriteCAPath(ID string) string {
-	return fmt.Sprintf("pki-%s/root/generate/internal", ID)
+func WriteCAPath(ID string, exportPrivateKey bool) string {
+	generationType := "internal"
+	if exportPrivateKey {
+		generationType = "exported"
+	}
+
+	return fmt.Sprintf("pki-%s/root/generate/%s", ID, generationType)
 }

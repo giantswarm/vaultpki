@@ -27,17 +27,56 @@ func (p *VaultPKI) CreateBackend(ID string) error {
 	return nil
 }
 
-func (p *VaultPKI) CreateCA(ID string) error {
-	k := key.WriteCAPath(ID)
+func (p *VaultPKI) createNewCA(ID string, exported bool) (CertificateAuthority, error) {
+	k := key.WriteCAPath(ID, exported)
 	v := map[string]interface{}{
 		"common_name": key.CommonName(ID, p.commonNameFormat),
 		"ttl":         p.caTTL,
 	}
 
-	_, err := p.vaultClient.Logical().Write(k, v)
+	secret, err := p.vaultClient.Logical().Write(k, v)
 	if err != nil {
-		return microerror.Mask(err)
+		return DefaultCertificateAuthority(), microerror.Mask(err)
 	}
 
-	return nil
+	var certificate string
+	{
+		value, ok := secret.Data["certificate"]
+		if !ok {
+			return DefaultCertificateAuthority(), microerror.Maskf(executionFailedError, "certificate missing")
+		}
+		certificate, ok = value.(string)
+		if !ok {
+			return DefaultCertificateAuthority(), microerror.Maskf(executionFailedError, "certificate must be string")
+		}
+	}
+
+	var privateKey string
+	{
+		if exported {
+			value, ok := secret.Data["private_key"]
+			if !ok {
+				return DefaultCertificateAuthority(), microerror.Maskf(executionFailedError, "private key missing")
+			}
+			privateKey, ok = value.(string)
+			if !ok {
+				return DefaultCertificateAuthority(), microerror.Maskf(executionFailedError, "private key must be string")
+			}
+		} else {
+			privateKey = ""
+		}
+	}
+
+	return CertificateAuthority{
+		Certificate: certificate,
+		PrivateKey:  privateKey,
+	}, nil
+}
+
+func (p *VaultPKI) CreateCA(ID string) (CertificateAuthority, error) {
+	return p.createNewCA(ID, true)
+}
+
+func (p *VaultPKI) CreateCAWithPrivateKey(ID string) (CertificateAuthority, error) {
+	return p.createNewCA(ID, true)
 }

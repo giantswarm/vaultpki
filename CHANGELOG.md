@@ -10,13 +10,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 
+### Added
+
+- Allow to export the private key when creating a CA.
+
 
 ## [0.1.2] 2020-03-17
 
 ### Changed
 
 - Extended `Interface.ListBackends` to additionally return PKI mount path.
-
 
 
 ## [0.1.1] 2020-03-17
