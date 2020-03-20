@@ -47,32 +47,36 @@ func (p *VaultPKI) GetBackend(ID string) (*vaultapi.MountOutput, error) {
 
 // GetCACertificate returns the public key of the root CA of the PKI backend
 // associated to the given ID, if any.
-func (p *VaultPKI) GetCACertificate(ID string) (string, error) {
+func (p *VaultPKI) GetCACertificate(ID string) (CertificateAuthority, error) {
 	secret, err := p.vaultClient.Logical().Read(key.ReadCAPath(ID))
 	if IsNoVaultHandlerDefined(err) {
-		return "", microerror.Maskf(notFoundError, "root CA for ID '%s'", ID)
+		return DefaultCertificateAuthority(), microerror.Maskf(notFoundError, "root CA for ID '%s'", ID)
 	} else if err != nil {
-		return "", microerror.Mask(err)
+		return DefaultCertificateAuthority(), microerror.Mask(err)
 	}
 
 	// If the secret is nil, the CA has not been generated.
 	if secret == nil {
-		return "", microerror.Maskf(notFoundError, "root CA for ID '%s'", ID)
+		return DefaultCertificateAuthority(), microerror.Maskf(notFoundError, "root CA for ID '%s'", ID)
 	}
 
 	var crt string
 	{
 		v, ok := secret.Data["certificate"]
 		if !ok {
-			return "", microerror.Maskf(executionFailedError, "certificate missing")
+			return DefaultCertificateAuthority(), microerror.Maskf(executionFailedError, "certificate missing")
 		}
 		crt, ok = v.(string)
 		if !ok {
-			return "", microerror.Maskf(executionFailedError, "certificate must be string")
+			return DefaultCertificateAuthority(), microerror.Maskf(executionFailedError, "certificate must be string")
 		}
 	}
 
-	return crt, nil
+	certificateAuthority := CertificateAuthority{
+		Certificate: crt,
+	}
+
+	return certificateAuthority, nil
 }
 
 func (p *VaultPKI) ListBackends() (map[string]*vaultapi.MountOutput, error) {
