@@ -74,7 +74,7 @@ func (p *VaultPKI) createNewCA(ID string, exported bool) (CertificateAuthority, 
 }
 
 func (p *VaultPKI) CreateCA(ID string) (CertificateAuthority, error) {
-	return p.createNewCA(ID, true)
+	return p.createNewCA(ID, false)
 }
 
 func (p *VaultPKI) CreateCAWithPrivateKey(ID string) (CertificateAuthority, error) {
