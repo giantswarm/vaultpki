@@ -9,8 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3] 2020-03-20
 
-### Added
+### Changed
 
 - Allow to export the private key when creating a CA.
 
@@ -29,7 +30,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fix `vaultpkitest` implementation to adhere to new interface.
 
 
-
 ## [0.1.0] 2020-03-17
 
 ### Added
@@ -38,7 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
-[Unreleased]: https://github.com/giantswarm/vaultpki/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/giantswarm/vaultpki/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/giantswarm/vaultpki/releases/tag/v0.1.3
 [0.1.2]: https://github.com/giantswarm/vaultpki/releases/tag/v0.1.2
 [0.1.1]: https://github.com/giantswarm/vaultpki/releases/tag/v0.1.1
 [0.1.0]: https://github.com/giantswarm/vaultpki/releases/tag/v0.1.0
