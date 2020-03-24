@@ -1,8 +1,9 @@
 package vaultpkitest
 
 import (
-	"github.com/giantswarm/vaultpki"
 	vaultapi "github.com/hashicorp/vault/api"
+
+	"github.com/giantswarm/vaultpki"
 )
 
 type VaultPKITest struct {
