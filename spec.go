@@ -26,4 +26,5 @@ type Interface interface {
 	GetBackend(ID string) (*vaultapi.MountOutput, error)
 	GetCACertificate(ID string) (CertificateAuthority, error)
 	ListBackends() (map[string]*vaultapi.MountOutput, error)
+	UpdateBackend(ID string) error
 }
