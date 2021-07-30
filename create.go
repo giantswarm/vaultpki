@@ -27,6 +27,19 @@ func (p *VaultPKI) CreateBackend(ID string) error {
 	return nil
 }
 
+func (p *VaultPKI) UpdateBackend(ID string) error {
+	mountConfigInput := vaultapi.MountConfigInput{
+		MaxLeaseTTL: p.caTTL,
+	}
+
+	err := p.vaultClient.Sys().TuneMount(ID, mountConfigInput)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	return nil
+}
+
 func (p *VaultPKI) createNewCA(ID string, exported bool) (CertificateAuthority, error) {
 	k := key.WriteCAPath(ID, exported)
 	v := map[string]interface{}{
