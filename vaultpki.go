@@ -56,7 +56,7 @@ func New(config Config) (*VaultPKI, error) {
 		logger:      config.Logger,
 		vaultClient: config.VaultClient,
 
-		caTTL:            config.CATTL,
+		caTTL:            "86760h",
 		commonNameFormat: config.CommonNameFormat,
 	}
 
