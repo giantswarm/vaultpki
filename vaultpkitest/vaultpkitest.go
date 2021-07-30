@@ -25,6 +25,10 @@ func (p *VaultPKITest) CreateBackend(ID string) error {
 	return nil
 }
 
+func (p *VaultPKITest) UpdateBackend(ID string) error {
+	return nil
+}
+
 func (p *VaultPKITest) CreateCA(ID string) (vaultpki.CertificateAuthority, error) {
 	return vaultpki.DefaultCertificateAuthority(), nil
 }
